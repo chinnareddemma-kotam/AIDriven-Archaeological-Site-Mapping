@@ -24,13 +24,22 @@ def load_model():
 
 session = load_model()
 
+# ---------------- AUTO DETECT NUMBER OF CLASSES ----------------
+input_shape = session.get_outputs()[0].shape
+NUM_CLASSES = input_shape[-1] - 4  # YOLOv8 format
+
 # ---------------- CLASS NAMES ----------------
-# 🔴 Make sure this order matches your training
-CLASS_NAMES = [
+# You can rename these safely
+DEFAULT_CLASSES = [
     "Red Soil",
     "Black Soil",
     "Alluvial Soil",
     "Clay Soil"
+]
+
+# Extend class list if model has more classes
+CLASS_NAMES = DEFAULT_CLASSES + [
+    f"Class {i}" for i in range(len(DEFAULT_CLASSES), NUM_CLASSES)
 ]
 
 # ---------------- IMAGE PREPROCESS ----------------
@@ -50,8 +59,8 @@ def postprocess(outputs, img_shape, conf_thres=0.4):
 
     for pred in preds:
         class_scores = pred[4:]
-        class_id = np.argmax(class_scores)
-        conf = class_scores[class_id]
+        cls_id = int(np.argmax(class_scores))
+        conf = float(class_scores[cls_id])
 
         if conf > conf_thres:
             x, y, bw, bh = pred[:4]
@@ -61,7 +70,7 @@ def postprocess(outputs, img_shape, conf_thres=0.4):
             x2 = int((x + bw / 2) * w)
             y2 = int((y + bh / 2) * h)
 
-            detections.append((x1, y1, x2, y2, class_id, float(conf)))
+            detections.append((x1, y1, x2, y2, cls_id, conf))
 
     return detections
 
@@ -86,8 +95,14 @@ if uploaded_file:
 
         if detections:
             for x1, y1, x2, y2, cls_id, conf in detections:
+                class_name = (
+                    CLASS_NAMES[cls_id]
+                    if cls_id < len(CLASS_NAMES)
+                    else f"Class {cls_id}"
+                )
+
                 cv2.rectangle(img_np, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                label = f"{CLASS_NAMES[cls_id]} {conf:.2f}"
+                label = f"{class_name} {conf:.2f}"
                 cv2.putText(
                     img_np,
                     label,
@@ -102,9 +117,10 @@ if uploaded_file:
 
             st.subheader("📊 Detected Soil Types")
             for _, _, _, _, cls_id, conf in detections:
-                st.write(f"• **{CLASS_NAMES[cls_id]}** — `{conf:.2f}`")
+                name = CLASS_NAMES[cls_id] if cls_id < len(CLASS_NAMES) else f"Class {cls_id}"
+                st.write(f"• **{name}** — `{conf:.2f}`")
         else:
-            st.warning("⚠️ No soil detected in the image.")
+            st.warning("⚠️ No soil detected.")
 
 else:
     st.info("👆 Upload an image to start detection.")
