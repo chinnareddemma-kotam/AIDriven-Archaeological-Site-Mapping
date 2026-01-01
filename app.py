@@ -4,17 +4,27 @@ import numpy as np
 import cv2
 from PIL import Image
 
-# ---------------- PAGE CONFIG ----------------
-st.set_page_config(
-    page_title="Soil Type Detection",
-    page_icon="🌱",
-    layout="centered"
-)
-
+# =============================
+# Page config
+# =============================
+st.set_page_config(page_title="Soil Detection", layout="centered")
 st.title("🌍 Soil Type Detection")
-st.markdown("Upload a soil image to detect the **soil type** using an ONNX model.")
+st.write("Upload an image to detect soil type")
 
-# ---------------- LOAD ONNX MODEL ----------------
+# =============================
+# Class names (VERY IMPORTANT)
+# Order must match training data.yaml
+# =============================
+CLASS_NAMES = [
+    "Alluvial Soil",  # 0
+    "Black Soil",     # 1
+    "Clay Soil",      # 2
+    "Red Soil"        # 3
+]
+
+# =============================
+# Load ONNX model
+# =============================
 @st.cache_resource
 def load_model():
     return ort.InferenceSession(
@@ -23,104 +33,102 @@ def load_model():
     )
 
 session = load_model()
+input_name = session.get_inputs()[0].name
+output_name = session.get_outputs()[0].name
 
-# ---------------- AUTO DETECT NUMBER OF CLASSES ----------------
-input_shape = session.get_outputs()[0].shape
-NUM_CLASSES = input_shape[-1] - 4  # YOLOv8 format
-
-# ---------------- CLASS NAMES ----------------
-# You can rename these safely
-DEFAULT_CLASSES = [
-    "Red Soil",
-    "Black Soil",
-    "Alluvial Soil",
-    "Clay Soil"
-]
-
-# Extend class list if model has more classes
-CLASS_NAMES = DEFAULT_CLASSES + [
-    f"Class {i}" for i in range(len(DEFAULT_CLASSES), NUM_CLASSES)
-]
-
-# ---------------- IMAGE PREPROCESS ----------------
+# =============================
+# Preprocess image
+# =============================
 def preprocess(image, img_size=640):
-    image = image.resize((img_size, img_size))
-    img = np.array(image).astype(np.float32) / 255.0
-    img = np.transpose(img, (2, 0, 1))  # HWC → CHW
+    img = np.array(image)
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+    h, w = img.shape[:2]
+    scale = img_size / max(h, w)
+    nh, nw = int(h * scale), int(w * scale)
+
+    resized = cv2.resize(img, (nw, nh))
+    canvas = np.zeros((img_size, img_size, 3), dtype=np.uint8)
+    canvas[:nh, :nw] = resized
+
+    img = canvas.astype(np.float32) / 255.0
+    img = np.transpose(img, (2, 0, 1))  # CHW
     img = np.expand_dims(img, axis=0)
-    return img
 
-# ---------------- POSTPROCESS (YOLOv8 ONNX) ----------------
-def postprocess(outputs, img_shape, conf_thres=0.4):
-    h, w = img_shape
+    return img, scale, (h, w)
+
+# =============================
+# Postprocess YOLO output
+# =============================
+def postprocess(output, scale, original_shape, conf_thres=0.4):
     detections = []
+    output = np.squeeze(output).T  # (num_detections, 4+1+num_classes)
 
-    preds = outputs[0][0]  # (num_boxes, 4 + num_classes)
+    for det in output:
+        x, y, w, h = det[:4]
+        obj_conf = det[4]
+        class_scores = det[5:]
 
-    for pred in preds:
-        class_scores = pred[4:]
-        cls_id = int(np.argmax(class_scores))
-        conf = float(class_scores[cls_id])
+        cls_id = np.argmax(class_scores)
+        cls_conf = class_scores[cls_id]
+        conf = obj_conf * cls_conf
 
-        if conf > conf_thres:
-            x, y, bw, bh = pred[:4]
+        if conf < conf_thres:
+            continue
 
-            x1 = int((x - bw / 2) * w)
-            y1 = int((y - bh / 2) * h)
-            x2 = int((x + bw / 2) * w)
-            y2 = int((y + bh / 2) * h)
+        # Convert to original image scale
+        x1 = int((x - w / 2) / scale)
+        y1 = int((y - h / 2) / scale)
+        x2 = int((x + w / 2) / scale)
+        y2 = int((y + h / 2) / scale)
 
-            detections.append((x1, y1, x2, y2, cls_id, conf))
+        detections.append((x1, y1, x2, y2, cls_id, conf))
 
     return detections
 
-# ---------------- FILE UPLOAD ----------------
+# =============================
+# Draw detections
+# =============================
+def draw_boxes(image, detections):
+    img = image.copy()
+    for x1, y1, x2, y2, cls_id, conf in detections:
+        label = f"{CLASS_NAMES[cls_id]} {conf:.2f}"
+        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(
+            img,
+            label,
+            (x1, max(y1 - 10, 0)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 0),
+            2
+        )
+    return img
+
+# =============================
+# Streamlit UI
+# =============================
 uploaded_file = st.file_uploader(
-    "📤 Upload Soil Image",
+    "Upload Image",
     type=["jpg", "jpeg", "png"]
 )
 
 if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption="📷 Uploaded Image", use_container_width=True)
+    st.image(image, caption="Uploaded Image", use_container_width=True)
 
-    if st.button("🔍 Detect Soil Type"):
-        with st.spinner("Running inference..."):
-            input_tensor = preprocess(image)
-            input_name = session.get_inputs()[0].name
-            outputs = session.run(None, {input_name: input_tensor})
+    if st.button("Detect Soil"):
+        img_np, scale, orig_shape = preprocess(image)
+        outputs = session.run([output_name], {input_name: img_np})[0]
 
-        img_np = np.array(image)
-        detections = postprocess(outputs, img_np.shape[:2])
+        detections = postprocess(outputs, scale, orig_shape)
 
-        if detections:
-            for x1, y1, x2, y2, cls_id, conf in detections:
-                class_name = (
-                    CLASS_NAMES[cls_id]
-                    if cls_id < len(CLASS_NAMES)
-                    else f"Class {cls_id}"
-                )
-
-                cv2.rectangle(img_np, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                label = f"{class_name} {conf:.2f}"
-                cv2.putText(
-                    img_np,
-                    label,
-                    (x1, max(y1 - 10, 10)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (0, 255, 0),
-                    2
-                )
-
-            st.image(img_np, caption="✅ Detection Result", use_container_width=True)
+        if not detections:
+            st.warning("No soil detected")
+        else:
+            result_img = draw_boxes(np.array(image), detections)
+            st.image(result_img, caption="Detection Result", use_container_width=True)
 
             st.subheader("📊 Detected Soil Types")
             for _, _, _, _, cls_id, conf in detections:
-                name = CLASS_NAMES[cls_id] if cls_id < len(CLASS_NAMES) else f"Class {cls_id}"
-                st.write(f"• **{name}** — `{conf:.2f}`")
-        else:
-            st.warning("⚠️ No soil detected.")
-
-else:
-    st.info("👆 Upload an image to start detection.")
+                st.write(f"• {CLASS_NAMES[cls_id]} — {conf:.2f}")
