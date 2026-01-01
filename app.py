@@ -40,39 +40,20 @@ output_name = session.get_outputs()[0].name
 # =============================
 # Preprocess
 # =============================
-def preprocess(image, img_size=640):
-    img = np.array(image)
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-
-    h, w = img.shape[:2]
-    scale = img_size / max(h, w)
-    nh, nw = int(h * scale), int(w * scale)
-
-    resized = cv2.resize(img, (nw, nh))
-    canvas = np.zeros((img_size, img_size, 3), dtype=np.uint8)
-    canvas[:nh, :nw] = resized
-
-    img = canvas.astype(np.float32) / 255.0
-    img = np.transpose(img, (2, 0, 1))  # CHW
-    img = np.expand_dims(img, axis=0)
-
-    return img, scale
-
-# =============================
-# Postprocess (YOLOv8 ONNX CORRECT)
-# =============================
 def postprocess(output, scale, conf_thres=0.4):
     detections = []
 
-    preds = np.squeeze(output)  # (84, 8400)
-    preds = preds.T             # (8400, 84)
+    preds = np.squeeze(output)   # (84, 8400)
+    preds = preds.T              # (8400, 84)
 
     for pred in preds:
         x, y, w, h = pred[:4]
-        class_scores = pred[4:4 + NUM_CLASSES]
 
-        cls_id = np.argmax(class_scores)
-        conf = class_scores[cls_id]
+        # 🔴 IMPORTANT: ONLY TAKE FIRST 4 CLASS SCORES
+        class_scores = pred[4:8]   # ← FIX IS HERE
+
+        cls_id = int(np.argmax(class_scores))
+        conf = float(class_scores[cls_id])
 
         if conf < conf_thres:
             continue
@@ -82,7 +63,7 @@ def postprocess(output, scale, conf_thres=0.4):
         x2 = int((x + w / 2) / scale)
         y2 = int((y + h / 2) / scale)
 
-        detections.append((x1, y1, x2, y2, cls_id, float(conf)))
+        detections.append((x1, y1, x2, y2, cls_id, conf))
 
     return detections
 
