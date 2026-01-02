@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+
+# YOLO / ML
+runs/
+processed/
+datasets/
+
+
+# Virtual env
+venv/
+.env/
+
+# OS
+.DS_Store
