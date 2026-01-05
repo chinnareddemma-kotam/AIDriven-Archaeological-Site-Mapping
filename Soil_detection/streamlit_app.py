@@ -15,8 +15,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # ----------------------------
 # Load checkpoint
 # ----------------------------
-model_path = r"C:\Users\welcome\Desktop\soildetection\Soil_detection\models\best_soil_classifier.pth"
-ckpt = torch.load(model_path, map_location=device)
+model_path = r"C:\Users\welcome\Desktop\soildetection\Soil_detection\models\best.pth"
+ckpt = torch.load(MODEL_PATH, map_location=device)
 
 # ----------------------------
 # Class names
