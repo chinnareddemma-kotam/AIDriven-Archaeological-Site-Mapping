@@ -1,0 +1,15 @@
+names:
+- Alluvial Soil
+- Black Soil
+- Clay Soil
+- Red Soil
+nc: 4
+roboflow:
+  license: CC BY 4.0
+  project: soil-detection-l0ngo
+  url: https://universe.roboflow.com/imit-h5ows/soil-detection-l0ngo/dataset/3
+  version: 3
+  workspace: imit-h5ows
+test: ../test/images
+train: ../train/images
+val: ../valid/images

@@ -1,0 +1,5 @@
+
+train: "C:/Users/welcome/Desktop/soildetection/processed/train/images"
+val: "C:/Users/welcome/Desktop/soildetection/processed/test/images"
+nc: 5
+names: ['Black Soil','Red Soil','Red Clay Soil','Alluvial Soil','Green Land']
