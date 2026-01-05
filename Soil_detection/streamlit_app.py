@@ -2,7 +2,7 @@ import streamlit as st
 import torch
 from PIL import Image
 import torchvision.transforms as transforms
-from Soil_detection.model import build_model
+from model import build_model
 
 # ----------------------------
 # Device
